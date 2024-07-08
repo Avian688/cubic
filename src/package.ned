@@ -1,0 +1,3 @@
+package cubic;
+
+@license(LGPL);
