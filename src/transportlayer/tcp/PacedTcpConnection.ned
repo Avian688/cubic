@@ -22,5 +22,11 @@ import inet.transportlayer.tcp.TcpConnection;
 simple PacedTcpConnection extends TcpConnection
 {
     parameters:
-        @class("inet::tcp::PacedTcpConnection");       
+        @class("inet::tcp::PacedTcpConnection");  
+        
+        @signal[recoveryPoint];	
+		@statistic[recoveryPoint](record=vector; interpolationmode=sample-hold);    
+		
+		@signal[sndUna];	
+		@statistic[sndUna](record=vector; interpolationmode=sample-hold);      
 }

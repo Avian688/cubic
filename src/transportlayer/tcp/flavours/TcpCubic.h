@@ -46,7 +46,8 @@ protected:
     static simsignal_t concaveSignal;
     static simsignal_t convexSignal;
     static simsignal_t friendlySignal;
-
+    static simsignal_t recoveryPointSignal;
+    static simsignal_t sndUnaSignal;
     /** Create and return a TcpNewRenoStateVariables object. */
     virtual TcpStateVariables* createStateVariables() override
     {

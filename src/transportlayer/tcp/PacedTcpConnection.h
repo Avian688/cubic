@@ -82,7 +82,7 @@ public:
     virtual bool processTimer(cMessage *msg) override;
     virtual void sendToIP(Packet *packet, const Ptr<TcpHeader> &tcpseg) override;
     virtual void changeIntersendingTime(simtime_t _intersendingTime);
-
+    virtual void setPipe() override;
     cOutVector paceValueVec;
     cOutVector bufferedPacketsVec;
 
