@@ -399,12 +399,12 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
                            << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to "
                            << state->snd_cwnd << "\n";
         }
+        if(state->snd_cwnd > 0){
+            //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
+            dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
+        }
     }
 
-    if(state->snd_cwnd > 0){
-        //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
-        dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
-    }
 
     // Check if recovery phase has ended
     if (state->sack_enabled && state->lossRecovery) {
@@ -483,7 +483,7 @@ void TcpCubic::receivedDuplicateAck() {
         state->snd_cwnd = state->ssthresh + 3 * state->snd_mss; // 20051129 (1)
         conn->emit(cwndSignal, state->snd_cwnd);
         if(state->snd_cwnd > 0){
-            //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->rtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
+           // dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->rtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
             dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
         }
 
