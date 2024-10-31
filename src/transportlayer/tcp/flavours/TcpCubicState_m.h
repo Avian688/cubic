@@ -27,8 +27,6 @@ struct TcpCubicStateVariables;
 
 #include "inet/common/INETDefs_m.h" // import inet.common.INETDefs
 
-#include "inet/transportlayer/tcp_common/TcpHeader_m.h" // import inet.transportlayer.tcp_common.TcpHeader
-
 #include "inet/transportlayer/tcp/flavours/TcpTahoeRenoFamilyState_m.h" // import inet.transportlayer.tcp.flavours.TcpTahoeRenoFamilyState
 
 
@@ -36,7 +34,7 @@ namespace inet {
 namespace tcp {
 
 /**
- * Struct generated from transportlayer/tcp/flavours/TcpCubicState.msg:28 by opp_msgtool.
+ * Struct generated from transportlayer/tcp/flavours/TcpCubicState.msg:25 by opp_msgtool.
  */
 struct TcpCubicStateVariables : ::inet::tcp::TcpTahoeRenoFamilyStateVariables
 {

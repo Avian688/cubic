@@ -14,15 +14,12 @@
 // 
 
 import inet.common.INETDefs;
-import inet.transportlayer.tcp_common.TcpHeader;
 import inet.transportlayer.tcp.flavours.TcpTahoeRenoFamilyState;
 
 namespace inet::tcp;
 
-
-
 ///
-/// State variables for TcpTahoeRenoFamily.
+/// State variables for TcpCubic.
 ///
 struct TcpCubicStateVariables extends TcpTahoeRenoFamilyStateVariables
 {
@@ -55,9 +52,6 @@ struct TcpCubicStateVariables extends TcpTahoeRenoFamilyStateVariables
    uint32_t epoch_start;// beginning of an epoch 
    uint32_t	ack_cnt;	// number of acks 
    uint32_t	tcp_cwnd;	// estimated tcp cwnd 
-
-   
-
    
    bool isConcave = false;
    bool isFriendly = false;

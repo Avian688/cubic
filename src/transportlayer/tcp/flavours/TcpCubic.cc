@@ -7,15 +7,12 @@
 
 #include "TcpCubic.h"
 
-#include "inet/transportlayer/tcp/Tcp.h"
-
 namespace inet {
 namespace tcp {
 
 #define DELAYED_ACK_TIMEOUT    0.2   // 200ms (RFC 1122: MUST be less than 0.5 seconds)
 #define MAX_REXMIT_COUNT       12   // 12 retries
 #define MIN_REXMIT_TIMEOUT     1.0   // 1s
-//#define MIN_REXMIT_TIMEOUT    0.6   // 600ms (3 ticks)
 #define MAX_REXMIT_TIMEOUT     240   // 2 * MSL (RFC 1122)
 #define MIN_PERSIST_TIMEOUT    5   // 5s
 #define MAX_PERSIST_TIMEOUT    60   // 60s
@@ -23,13 +20,11 @@ namespace tcp {
 Register_Class(TcpCubic);
 
 simsignal_t TcpCubic::bicTargetSignal = cComponent::registerSignal("bicTarget");
-simsignal_t TcpCubic::originPointSignal = cComponent::registerSignal(
-        "originalPoint");
+simsignal_t TcpCubic::originPointSignal = cComponent::registerSignal("originalPoint");
 simsignal_t TcpCubic::cwndSegSignal = cComponent::registerSignal("cwndSeg");
 simsignal_t TcpCubic::bicKSignal = cComponent::registerSignal("bicK");
 simsignal_t TcpCubic::cntSignal = cComponent::registerSignal("cnt");
-simsignal_t TcpCubic::lastMaxWindowSignal = cComponent::registerSignal(
-        "lastMaxWindow");
+simsignal_t TcpCubic::lastMaxWindowSignal = cComponent::registerSignal("lastMaxWindow");
 simsignal_t TcpCubic::delayMinSignal = cComponent::registerSignal("delayMin");
 simsignal_t TcpCubic::concaveSignal = cComponent::registerSignal("concave");
 simsignal_t TcpCubic::convexSignal = cComponent::registerSignal("convex");
@@ -38,21 +33,23 @@ simsignal_t TcpCubic::friendlySignal = cComponent::registerSignal("friendly");
 simsignal_t TcpCubic::sndUnaSignal = cComponent::registerSignal("sndUna");
 simsignal_t TcpCubic::recoveryPointSignal = cComponent::registerSignal("recoveryPoint");
 
-TcpCubic::TcpCubic() :
-        TcpTahoeRenoFamily(), state(
-                (TcpCubicStateVariables*&) TcpAlgorithm::state) {
-}
-
-std::string TcpCubicStateVariables::str() const {
+std::string TcpCubicStateVariables::str() const
+{
     std::stringstream out;
     out << TcpTahoeRenoFamilyStateVariables::str();
     return out.str();
 }
 
-std::string TcpCubicStateVariables::detailedInfo() const {
+std::string TcpCubicStateVariables::detailedInfo() const
+{
     std::stringstream out;
     out << TcpTahoeRenoFamilyStateVariables::detailedInfo();
     return out.str();
+}
+
+TcpCubic::TcpCubic() :
+        TcpPacedFamily(), state(
+                (TcpCubicStateVariables*&) TcpAlgorithm::state) {
 }
 
 void TcpCubic::reset() {
@@ -75,7 +72,7 @@ void TcpCubic::reset() {
 }
 
 void TcpCubic::initialize() {
-    TcpTahoeRenoFamily::initialize();
+    TcpPacedFamily::initialize();
     reset();
     /* Precompute a bunch of the scaling factors that are used per-packet
      * based on SRTT of 100ms
@@ -325,37 +322,49 @@ void TcpCubic::recalculateSlowStartThreshold() {
 
 void TcpCubic::processRexmitTimer(TcpEventCode &event) {
     TcpTahoeRenoFamily::processRexmitTimer(event);
-//    RFC 5681:
-//    On the other hand, when a TCP sender detects segment loss using the
-//    retransmission timer and the given segment has already been
-//    retransmitted by way of the retransmission timer at least once, the
-//    value of ssthresh is held constant.
-//    Furthermore, upon a timeout (as specified in [RFC2988]) cwnd MUST be
-//    set to no more than the loss window, LW, which equals 1 full-sized
-//    segment (regardless of the value of IW).
+
+    if (event == TCP_E_ABORT)
+        return;
+    //    RFC 5681:
+    //    On the other hand, when a TCP sender detects segment loss using the
+    //    retransmission timer and the given segment has already been
+    //    retransmitted by way of the retransmission timer at least once, the
+    //    value of ssthresh is held constant.
+    //    Furthermore, upon a timeout (as specified in [RFC2988]) cwnd MUST be
+    //    set to no more than the loss window, LW, which equals 1 full-sized
+    //    segment (regardless of the value of IW).
 
     std::cerr << "RTO at " << simTime() << std::endl;
     std::cerr << "cwnd=: " << state->snd_cwnd / state->snd_mss << ", in-flight="
             << (state->snd_max - state->snd_una) / state->snd_mss << std::endl;
-    if (event == TCP_E_ABORT)
-        return;
 
     reset();
     recalculateSlowStartThreshold();
-    conn->emit(recoverSignal, state->recover);
     state->snd_cwnd = state->snd_mss;
 
-    state->afterRto = true;
-    conn->retransmitOneSegment(true);
-    conn->emit(highRxtSignal, state->highRxt);
+//    if(state->snd_cwnd > 0){
+//        if(state->snd_cwnd < state->ssthresh/2){
+//            dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/(((double) state->snd_cwnd/(double)state->snd_mss)* 2));
+//        }
+//        else{
+//            dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/(((double) state->snd_cwnd/(double)state->snd_mss)* 2));
+//        }
+//    }
 
     conn->emit(cwndSignal, state->snd_cwnd);
+
+    state->afterRto = true;
+    dynamic_cast<TcpPacedConnection*>(conn)->cancelPaceTimer();
+    dynamic_cast<TcpPacedConnection*>(conn)->retransmitNext(true);
+    sendData(false);
+
     conn->emit(ssthreshSignal, state->ssthresh);
     conn->emit(cwndSegSignal, state->snd_cwnd / state->snd_mss);
-
 }
 
 void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
+    double paceFactor = 2;
+
     TcpTahoeRenoFamily::receivedDataAck(firstSeqAcked);
 
     if (state->dupacks >= state->dupthresh) {
@@ -369,8 +378,8 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
     else{
         state->delay_min = state->srtt.inUnit(SIMTIME_US);
         if (state->snd_cwnd < state->ssthresh) {
-            EV_INFO
-                           << "cwnd <= ssthresh: Slow Start: increasing cwnd by one SMSS bytes to ";
+            paceFactor = 2;
+            EV_INFO << "cwnd <= ssthresh: Slow Start: increasing cwnd by one SMSS bytes to ";
 
             // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
             // by at most SMSS bytes for each ACK received that acknowledges new data."
@@ -379,35 +388,31 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
             conn->emit(ssthreshSignal, state->ssthresh);
 
             EV_INFO << "cwnd=" << state->snd_cwnd << "\n";
-        } else {
-            // perform Congestion Avoidance (RFC 2581)
+        }
+        else {
+            paceFactor = 1.2;
+
             updateCubicCwnd(1);
+
             if (state->cwnd_cnt >= state->cnt) {
                 state->snd_cwnd += state->snd_mss;
                 state->cwnd_cnt = 0;
-
-            } else {
+            }
+            else {
                 state->cwnd_cnt++;
             }
-
-
             conn->emit(cwndSignal, state->snd_cwnd);
             conn->emit(ssthreshSignal, state->ssthresh);
 
 
-            EV_INFO
-                           << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to "
-                           << state->snd_cwnd << "\n";
-        }
-        if(state->snd_cwnd > 0){
-            //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
-            dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
+            EV_INFO << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to " << state->snd_cwnd << "\n";
         }
     }
 
 
     // Check if recovery phase has ended
     if (state->sack_enabled && state->lossRecovery) {
+        //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
         // RFC 3517, page 7: "Once a TCP is in the loss recovery phase the following procedure MUST
         // be used for each arriving ACK:
         //
@@ -420,25 +425,36 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
         if (seqGE(state->snd_una, state->recoveryPoint)) {
             EV_INFO << "Loss Recovery terminated.\n";
             state->lossRecovery = false;
-            conn->emit(lossRecoverySignal, 0);
+            //state->snd_cwnd = state->ssthresh;
         }
         else{
             conn->setPipe();
-            if (((int)state->snd_cwnd - (int)state->pipe) >= (int)state->snd_mss) // Note: Typecast needed to avoid prohibited transmissions
-                conn->sendDataDuringLossRecoveryPhase(state->snd_cwnd);
+            //if (((int)state->snd_cwnd - (int)state->pipe) >= (int)state->snd_mss) // Note: Typecast needed to avoid prohibited transmissions
+            //    dynamic_cast<TcpPacedConnection*>(conn)->sendDataDuringLossRecoveryPhase(state->snd_cwnd);
         }
         conn->emit(sndUnaSignal, state->snd_una);
         conn->emit(recoveryPointSignal, state->recoveryPoint);
     }
 
-    sendData(false);
-    conn->emit(cwndSegSignal, state->snd_cwnd / state->snd_mss);
+    if(state->snd_cwnd > 0){
+        if(!state->lossRecovery){
+            dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/(((double) state->snd_cwnd/(double)state->snd_mss)* paceFactor));
+            //dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(0.000001);
+        }
+        else{
+            dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/(((double) state->snd_cwnd/(double)state->snd_mss)* paceFactor));
+            //dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(0.000001);
+        }
+    }
 
+    sendData(false);
+
+    conn->emit(cwndSegSignal, state->snd_cwnd / state->snd_mss);
 }
 
-void TcpCubic::receivedDuplicateAck() {
+void TcpCubic::receivedDuplicateAck()
+{
     TcpTahoeRenoFamily::receivedDuplicateAck();
-
     if (state->dupacks == state->dupthresh) {
         EV_INFO << "Reno on dupAcks == DUPTHRESH(=" << state->dupthresh << ": perform Fast Retransmit, and enter Fast Recovery:";
 
@@ -466,7 +482,6 @@ void TcpCubic::receivedDuplicateAck() {
             if (state->recoveryPoint == 0 || seqGE(state->snd_una, state->recoveryPoint)) { // HighACK = snd_una
                 state->recoveryPoint = state->snd_max; // HighData = snd_max
                 state->lossRecovery = true;
-                conn->emit(lossRecoverySignal, 1);
                 EV_DETAIL << " recoveryPoint=" << state->recoveryPoint;
             }
         }
@@ -482,51 +497,46 @@ void TcpCubic::receivedDuplicateAck() {
         // "set cwnd to ssthresh plus 3 * SMSS." (RFC 2581)
         state->snd_cwnd = state->ssthresh + 3 * state->snd_mss; // 20051129 (1)
         conn->emit(cwndSignal, state->snd_cwnd);
-        if(state->snd_cwnd > 0){
-           // dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->rtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
-            dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
-        }
 
         EV_DETAIL << " set cwnd=" << state->snd_cwnd << ", ssthresh=" << state->ssthresh << "\n";
 
         // Fast Retransmission: retransmit missing segment without waiting
         // for the REXMIT timer to expire
-        conn->retransmitOneSegment(false);
+        dynamic_cast<TcpPacedConnection*>(conn)->retransmitNext(false);
+        sendData(false); //try to retransmit immediately
 
         // Do not restart REXMIT timer.
         // Note: Restart of REXMIT timer on retransmission is not part of RFC 2581, however optional in RFC 3517 if sent during recovery.
         // Resetting the REXMIT timer is discussed in RFC 2582/3782 (NewReno) and RFC 2988.
 
-        if (state->sack_enabled) {
-            // RFC 3517, page 7: "(4) Run SetPipe ()
-            //
-            // Set a "pipe" variable  to the number of outstanding octets
-            // currently "in the pipe"; this is the data which has been sent by
-            // the TCP sender but for which no cumulative or selective
-            // acknowledgment has been received and the data has not been
-            // determined to have been dropped in the network.  It is assumed
-            // that the data is still traversing the network path."
-            conn->setPipe();
-            // RFC 3517, page 7: "(5) In order to take advantage of potential additional available
-            // cwnd, proceed to step (C) below."
-            if (state->lossRecovery) {
-                // RFC 3517, page 9: "Therefore we give implementers the latitude to use the standard
-                // [RFC2988] style RTO management or, optionally, a more careful variant
-                // that re-arms the RTO timer on each retransmission that is sent during
-                // recovery MAY be used.  This provides a more conservative timer than
-                // specified in [RFC2988], and so may not always be an attractive
-                // alternative.  However, in some cases it may prevent needless
-                // retransmissions, go-back-N transmission and further reduction of the
-                // congestion window."
-                // Note: Restart of REXMIT timer on retransmission is not part of RFC 2581, however optional in RFC 3517 if sent during recovery.
-                EV_INFO << "Retransmission sent during recovery, restarting REXMIT timer.\n";
-                restartRexmitTimer();
-
-                // RFC 3517, page 7: "(C) If cwnd - pipe >= 1 SMSS the sender SHOULD transmit one or more
-                // segments as follows:"
-                if (((int)state->snd_cwnd - (int)state->pipe) >= (int)state->snd_mss) // Note: Typecast needed to avoid prohibited transmissions
-                    conn->sendDataDuringLossRecoveryPhase(state->snd_cwnd);
-            }
+        // RFC 3517, page 7: "(4) Run SetPipe ()
+        //
+        // Set a "pipe" variable  to the number of outstanding octets
+        // currently "in the pipe"; this is the data which has been sent by
+        // the TCP sender but for which no cumulative or selective
+        // acknowledgment has been received and the data has not been
+        // determined to have been dropped in the network.  It is assumed
+        // that the data is still traversing the network path."
+        conn->setPipe();
+        // RFC 3517, page 7: "(5) In order to take advantage of potential additional available
+        // cwnd, proceed to step (C) below."
+        if (state->lossRecovery) {
+//                // RFC 3517, page 9: "Therefore we give implementers the latitude to use the standard
+//                // [RFC2988] style RTO management or, optionally, a more careful variant
+//                // that re-arms the RTO timer on each retransmission that is sent during
+//                // recovery MAY be used.  This provides a more conservative timer than
+//                // specified in [RFC2988], and so may not always be an attractive
+//                // alternative.  However, in some cases it may prevent needless
+//                // retransmissions, go-back-N transmission and further reduction of the
+//                // congestion window."
+//                // Note: Restart of REXMIT timer on retransmission is not part of RFC 2581, however optional in RFC 3517 if sent during recovery.
+//                EV_INFO << "Retransmission sent during recovery, restarting REXMIT timer.\n";
+            restartRexmitTimer();
+//
+//                // RFC 3517, page 7: "(C) If cwnd - pipe >= 1 SMSS the sender SHOULD transmit one or more
+//                // segments as follows:"
+//                if (((int)state->snd_cwnd - (int)state->pipe) >= (int)state->snd_mss) // Note: Typecast needed to avoid prohibited transmissions
+//                    dynamic_cast<TcpPacedConnection*>(conn)->sendDataDuringLossRecoveryPhase(state->snd_cwnd);
         }
 
         // try to transmit new segments (RFC 2581)
@@ -534,18 +544,14 @@ void TcpCubic::receivedDuplicateAck() {
     }
     else if (state->dupacks > state->dupthresh) {
         //
-        // Reno: For each additional duplicate ACK received, increment cwnd by SMSS.
+        // Cubic: For each additional duplicate ACK received, increment cwnd by SMSS.
         // This artificially inflates the congestion window in order to reflect the
         // additional segment that has left the network
         //
-        state->snd_cwnd += state->snd_mss;
-        if(state->snd_cwnd > 0){
-            //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/((double) state->snd_cwnd/(double)state->snd_mss));
-            dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
-        }
-        EV_DETAIL << "Reno on dupAcks > DUPTHRESH(=" << state->dupthresh << ": Fast Recovery: inflating cwnd by SMSS, new cwnd=" << state->snd_cwnd << "\n";
+        //state->snd_cwnd += state->snd_mss;
+        EV_DETAIL << "Cubic on dupAcks > DUPTHRESH(=" << state->dupthresh << ": Fast Recovery: inflating cwnd by SMSS, new cwnd=" << state->snd_cwnd << "\n";
 
-        conn->emit(cwndSignal, state->snd_cwnd);
+        //conn->emit(cwndSignal, state->snd_cwnd);
 
         // Note: Steps (A) - (C) of RFC 3517, page 7 ("Once a TCP is in the loss recovery phase the following procedure MUST be used for each arriving ACK")
         // should not be used here!
@@ -563,63 +569,6 @@ void TcpCubic::receivedDuplicateAck() {
         // as missing should be a reasonable approach."
         sendData(false);
     }
-//      When a TCP sender receives the duplicate ACK corresponding to
-//      DupThresh ACKs, the scoreboard MUST be updated with the new SACK
-//      information (via Update ()).  If no previous loss event has occurred
-//      on the connection or the cumulative acknowledgment point is beyond
-//      the last value of RecoveryPoint, a loss recovery phase SHOULD be
-//      initiated, per the fast retransmit algorithm outlined in [RFC2581].
-
-
-//    if (state->dupacks >= state->dupthresh) {
-//        if (!state->lossRecovery
-//                && (state->recoveryPoint == 0
-//                        || seqGE(state->snd_una, state->recoveryPoint))) {
-//
-//            state->recoveryPoint = state->snd_max; // HighData = snd_max
-//            conn->emit(sndUnaSignal, state->snd_una);
-//            conn->emit(recoveryPointSignal, state->recoveryPoint);
-//            state->lossRecovery = true;
-//            EV_DETAIL << " recoveryPoint=" << state->recoveryPoint;
-//            conn->emit(lossRecoverySignal, 1);
-//
-//            // enter Fast Recovery
-//            recalculateSlowStartThreshold();
-//            // "set cwnd to ssthresh plus 3 * SMSS." (RFC 2581)
-//            state->snd_cwnd = state->ssthresh + state->dupthresh * state->snd_mss;
-//
-//
-//            conn->emit(cwndSignal, state->snd_cwnd);
-//
-//            EV_DETAIL << " set cwnd=" << state->snd_cwnd << ", ssthresh="
-//                             << state->ssthresh << "\n";
-//
-//            // Fast Retransmission: retransmit missing segment without waiting
-//            // for the REXMIT timer to expire
-//            conn->retransmitOneSegment(false);
-//            conn->emit(highRxtSignal, state->highRxt);
-//        }
-//
-//
-//        conn->emit(cwndSignal, state->snd_cwnd);
-//        conn->emit(ssthreshSignal, state->ssthresh);
-//
-//    }
-//
-//    if(state->snd_cwnd > 0){
-//        dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.00000001);
-//    }
-//
-//    if (state->lossRecovery) {
-//        conn->setPipe();
-//
-//        if (((int) (state->snd_cwnd / state->snd_mss)
-//                - (int) (state->pipe / (state->snd_mss))) >= 1) { // Note: Typecast needed to avoid prohibited transmissions
-//            conn->sendDataDuringLossRecoveryPhase(state->snd_cwnd);
-//        }
-//        conn->emit(sndUnaSignal, state->snd_una);
-//        conn->emit(recoveryPointSignal, state->recoveryPoint);
-//    }
 }
 
 void TcpCubic::rttMeasurementComplete(simtime_t tSent, simtime_t tAcked)
@@ -634,7 +583,10 @@ void TcpCubic::rttMeasurementComplete(simtime_t tSent, simtime_t tAcked)
     // update smoothed RTT estimate (srtt) and variance (rttvar)
     const double g = 0.125; // 1 / 8; (1 - alpha) where alpha == 7 / 8;
     simtime_t newRTT = tAcked - tSent;
-    state->rtt = newRTT;
+
+    if(state->srtt == 1){
+        state->srtt = newRTT;
+    }
 
     simtime_t& srtt = state->srtt;
     simtime_t& rttvar = state->rttvar;

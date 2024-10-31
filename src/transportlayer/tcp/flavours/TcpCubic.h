@@ -8,10 +8,11 @@
 #ifndef CUBIC_TRANSPORTLAYER_TCP_FLAVOURS_TCPCUBIC_H_
 #define CUBIC_TRANSPORTLAYER_TCP_FLAVOURS_TCPCUBIC_H_
 
-#include "inet/transportlayer/tcp/flavours/TcpTahoeRenoFamily.h"
+#include <inet/transportlayer/tcp/TcpConnection.h>
+#include "../../../../../tcpPaced/src/transportlayer/tcp/flavours/TcpPacedFamily.h"
+#include "../../../../../tcpPaced/src/transportlayer/tcp/TcpPacedConnection.h"
 #include "TcpCubicState_m.h"
-#include "inet/transportlayer/tcp/TcpConnection.h"
-#include "../PacedTcpConnection.h"
+
 #include <cmath>
 
 #define BICTCP_BETA_SCALE    1024   /* Scale factor beta calculation
@@ -32,7 +33,7 @@ namespace tcp {
  * Implements TCP Cubic.
  */
 
-class INET_API TcpCubic: public TcpTahoeRenoFamily {
+class INET_API TcpCubic: public TcpPacedFamily {
 protected:
     TcpCubicStateVariables *&state; // alias to TcpAlgorithm's 'state'
 
@@ -48,6 +49,7 @@ protected:
     static simsignal_t friendlySignal;
     static simsignal_t recoveryPointSignal;
     static simsignal_t sndUnaSignal;
+
     /** Create and return a TcpNewRenoStateVariables object. */
     virtual TcpStateVariables* createStateVariables() override
     {
