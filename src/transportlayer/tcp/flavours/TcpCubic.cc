@@ -12,7 +12,7 @@ namespace tcp {
 
 #define DELAYED_ACK_TIMEOUT    0.2   // 200ms (RFC 1122: MUST be less than 0.5 seconds)
 #define MAX_REXMIT_COUNT       12   // 12 retries
-#define MIN_REXMIT_TIMEOUT     1.0   // 1s
+#define MIN_REXMIT_TIMEOUT     0.2  // 1s
 #define MAX_REXMIT_TIMEOUT     240   // 2 * MSL (RFC 1122)
 #define MIN_PERSIST_TIMEOUT    5   // 5s
 #define MAX_PERSIST_TIMEOUT    60   // 60s
