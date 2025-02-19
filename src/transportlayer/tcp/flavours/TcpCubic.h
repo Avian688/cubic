@@ -66,6 +66,10 @@ public:
     /** Ctor */
     TcpCubic();
 
+    virtual void initialize() override;
+
+    virtual void established(bool active) override;
+
     /** Utility function to recalculate ssthresh */
     virtual void recalculateSlowStartThreshold();
 
@@ -78,8 +82,6 @@ public:
 
     /** Redefine what should happen when dupAck was received, to add congestion window management */
     virtual void receivedDuplicateAck() override;
-
-    virtual void initialize() override;
 
     virtual void rttMeasurementComplete(simtime_t tSent, simtime_t tAcked) override;
 };
