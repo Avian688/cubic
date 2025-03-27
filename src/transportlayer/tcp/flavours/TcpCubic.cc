@@ -329,6 +329,9 @@ void TcpCubic::recalculateSlowStartThreshold() {
 void TcpCubic::processRexmitTimer(TcpEventCode &event) {
     TcpPacedFamily::processRexmitTimer(event);
 
+    state->lossRecovery = true;
+    state->recoveryPoint = state->snd_max;
+
     std::cerr << "RTO at " << simTime() << std::endl;
     std::cerr << "cwnd=: " << state->snd_cwnd / state->snd_mss << ", in-flight="
             << (state->snd_max - state->snd_una) / state->snd_mss << std::endl;
@@ -435,7 +438,7 @@ void TcpCubic::receivedDuplicateAck()
 {
     TcpTahoeRenoFamily::receivedDuplicateAck();
 
-    bool isHighRxtLost = dynamic_cast<TcpPacedConnection*>(conn)->checkIsLost(dynamic_cast<TcpPacedConnection*>(conn)->getHighestRexmittedSeqNum());
+    bool isHighRxtLost = dynamic_cast<TcpPacedConnection*>(conn)->checkIsLost(state->snd_una+state->snd_mss);
     if (state->dupacks == state->dupthresh || isHighRxtLost) {
         EV_INFO << "Reno on dupAcks == DUPTHRESH(=" << state->dupthresh << ": perform Fast Retransmit, and enter Fast Recovery:";
 
