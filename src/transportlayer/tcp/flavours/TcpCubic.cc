@@ -329,9 +329,6 @@ void TcpCubic::recalculateSlowStartThreshold() {
 void TcpCubic::processRexmitTimer(TcpEventCode &event) {
     TcpPacedFamily::processRexmitTimer(event);
 
-    state->lossRecovery = true;
-    state->recoveryPoint = state->snd_max;
-
     std::cerr << "RTO at " << simTime() << std::endl;
     std::cerr << "cwnd=: " << state->snd_cwnd / state->snd_mss << ", in-flight="
             << (state->snd_max - state->snd_una) / state->snd_mss << std::endl;
@@ -353,8 +350,7 @@ void TcpCubic::processRexmitTimer(TcpEventCode &event) {
 
     state->afterRto = true;
     dynamic_cast<TcpPacedConnection*>(conn)->cancelPaceTimer();
-
-    dynamic_cast<TcpPacedConnection*>(conn)->retransmitNext(true);
+    dynamic_cast<TcpPacedConnection*>(conn)->doRetransmit();
     sendData(false);
 
     conn->emit(ssthreshSignal, state->ssthresh);
@@ -439,6 +435,7 @@ void TcpCubic::receivedDuplicateAck()
     TcpTahoeRenoFamily::receivedDuplicateAck();
 
     bool isHighRxtLost = dynamic_cast<TcpPacedConnection*>(conn)->checkIsLost(state->snd_una+state->snd_mss);
+    isHighRxtLost = false;
     if (state->dupacks == state->dupthresh || isHighRxtLost) {
         EV_INFO << "Reno on dupAcks == DUPTHRESH(=" << state->dupthresh << ": perform Fast Retransmit, and enter Fast Recovery:";
 
@@ -473,7 +470,7 @@ void TcpCubic::receivedDuplicateAck()
                 state->snd_cwnd = state->ssthresh; // 20051129 (1)
                 EV_DETAIL << " recoveryPoint=" << state->recoveryPoint;
 
-                dynamic_cast<TcpPacedConnection*>(conn)->retransmitNext(false);
+                dynamic_cast<TcpPacedConnection*>(conn)->doRetransmit();
             }
         }
         // RFC 2581, page 5:
