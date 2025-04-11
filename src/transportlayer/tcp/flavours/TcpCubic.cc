@@ -369,7 +369,7 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
 
         // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
         // by at most SMSS bytes for each ACK received that acknowledges new data."
-        state->snd_cwnd += state->snd_mss;
+        //state->snd_cwnd += state->snd_mss;
         conn->emit(cwndSignal, state->snd_cwnd);
         conn->emit(ssthreshSignal, state->ssthresh);
 
@@ -410,9 +410,10 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
         if (seqGE(state->snd_una, state->recoveryPoint)) {
             EV_INFO << "Loss Recovery terminated.\n";
             state->lossRecovery = false;
-            //state->snd_cwnd = state->ssthresh;
+            state->snd_cwnd = state->ssthresh;
         }
         else{
+            dynamic_cast<TcpPacedConnection*>(conn)->doRetransmit();
             //conn->setPipe();
             //if (((int)state->snd_cwnd - (int)state->pipe) >= (int)state->snd_mss) // Note: Typecast needed to avoid prohibited transmissions
             //    dynamic_cast<TcpPacedConnection*>(conn)->sendDataDuringLossRecoveryPhase(state->snd_cwnd);
