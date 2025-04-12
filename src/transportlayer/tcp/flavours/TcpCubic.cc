@@ -369,7 +369,7 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
 
         // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
         // by at most SMSS bytes for each ACK received that acknowledges new data."
-        //state->snd_cwnd += state->snd_mss;
+        state->snd_cwnd += state->snd_mss;
         conn->emit(cwndSignal, state->snd_cwnd);
         conn->emit(ssthreshSignal, state->ssthresh);
 
@@ -410,7 +410,6 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
         if (seqGE(state->snd_una, state->recoveryPoint)) {
             EV_INFO << "Loss Recovery terminated.\n";
             state->lossRecovery = false;
-            state->snd_cwnd = state->ssthresh;
         }
         else{
             dynamic_cast<TcpPacedConnection*>(conn)->doRetransmit();
@@ -433,10 +432,9 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
 
 void TcpCubic::receivedDuplicateAck()
 {
-    TcpTahoeRenoFamily::receivedDuplicateAck();
+    //TcpTahoeRenoFamily::receivedDuplicateAck();
 
     bool isHighRxtLost = dynamic_cast<TcpPacedConnection*>(conn)->checkIsLost(state->snd_una+state->snd_mss);
-    isHighRxtLost = false;
     bool rackLoss = dynamic_cast<TcpPacedConnection*>(conn)->checkRackLoss();
     if ((rackLoss && !state->lossRecovery) || state->dupacks == state->dupthresh || (isHighRxtLost && !state->lossRecovery)) {
         EV_INFO << "Reno on dupAcks == DUPTHRESH(=" << state->dupthresh << ": perform Fast Retransmit, and enter Fast Recovery:";
@@ -490,8 +488,6 @@ void TcpCubic::receivedDuplicateAck()
 
         // Fast Retransmission: retransmit missing segment without waiting
         // for the REXMIT timer to expire
-        sendData(false); //try to retransmit immediately
-
         // Do not restart REXMIT timer.
         // Note: Restart of REXMIT timer on retransmission is not part of RFC 2581, however optional in RFC 3517 if sent during recovery.
         // Resetting the REXMIT timer is discussed in RFC 2582/3782 (NewReno) and RFC 2988.
