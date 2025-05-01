@@ -358,43 +358,9 @@ void TcpCubic::processRexmitTimer(TcpEventCode &event) {
 }
 
 void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
-    double paceFactor = 2;
 
     TcpTahoeRenoFamily::receivedDataAck(firstSeqAcked);
-
     state->delay_min = state->srtt.inUnit(SIMTIME_US);
-    if (state->snd_cwnd < state->ssthresh) {
-        paceFactor = 2;
-        EV_INFO << "cwnd <= ssthresh: Slow Start: increasing cwnd by one SMSS bytes to ";
-
-        // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
-        // by at most SMSS bytes for each ACK received that acknowledges new data."
-        state->snd_cwnd += state->snd_mss;
-        conn->emit(cwndSignal, state->snd_cwnd);
-        conn->emit(ssthreshSignal, state->ssthresh);
-
-        EV_INFO << "cwnd=" << state->snd_cwnd << "\n";
-    }
-    else {
-        paceFactor = 1.2;
-
-        updateCubicCwnd(1);
-
-        if (state->cwnd_cnt >= state->cnt) {
-            state->snd_cwnd += state->snd_mss;
-            state->cwnd_cnt = 0;
-        }
-        else {
-            state->cwnd_cnt++;
-        }
-        conn->emit(cwndSignal, state->snd_cwnd);
-        conn->emit(ssthreshSignal, state->ssthresh);
-
-
-        EV_INFO << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to " << state->snd_cwnd << "\n";
-    }
-
-
     // Check if recovery phase has ended
     if (state->sack_enabled && state->lossRecovery) {
         //dynamic_cast<PacedTcpConnection*>(conn)->changeIntersendingTime(0.000000001);
@@ -409,6 +375,7 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
         // phase."
         if (seqGE(state->snd_una, state->recoveryPoint)) {
             EV_INFO << "Loss Recovery terminated.\n";
+            state->snd_cwnd = state->ssthresh;
             state->lossRecovery = false;
         }
         else{
@@ -421,8 +388,47 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
         conn->emit(recoveryPointSignal, state->recoveryPoint);
     }
 
+    if (!state->lossRecovery) {
+        if (state->snd_cwnd < state->ssthresh) {
+            EV_INFO << "cwnd <= ssthresh: Slow Start: increasing cwnd by one SMSS bytes to ";
+
+            // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
+            // by at most SMSS bytes for each ACK received that acknowledges new data."
+            state->snd_cwnd += state->snd_mss;
+            conn->emit(cwndSignal, state->snd_cwnd);
+            conn->emit(ssthreshSignal, state->ssthresh);
+
+            EV_INFO << "cwnd=" << state->snd_cwnd << "\n";
+        }
+        else {
+
+            updateCubicCwnd(1);
+
+            if (state->cwnd_cnt >= state->cnt) {
+                state->snd_cwnd += state->snd_mss;
+                state->cwnd_cnt = 0;
+            }
+            else {
+                state->cwnd_cnt++;
+            }
+            conn->emit(cwndSignal, state->snd_cwnd);
+            conn->emit(ssthreshSignal, state->ssthresh);
+
+
+            EV_INFO << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to " << state->snd_cwnd << "\n";
+        }
+    }
+
     if(state->snd_cwnd > 0){
-        dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/(((double) state->snd_cwnd/(double)state->snd_mss)* paceFactor));
+        double paceFactor;
+        if (state->snd_cwnd < state->ssthresh/2) {
+            paceFactor = 2;
+        }
+        else{
+            paceFactor = 1.2;
+        }
+        uint32_t maxWindow = std::max(state->snd_cwnd, dynamic_cast<TcpPacedConnection*>(conn)->getBytesInFlight());
+        dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(state->srtt.dbl()/(((double) maxWindow/(double)state->snd_mss)* paceFactor));
     }
 
     sendData(false);
@@ -433,6 +439,7 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
 void TcpCubic::receivedDuplicateAck()
 {
     //TcpTahoeRenoFamily::receivedDuplicateAck();
+    state->delay_min = state->srtt.inUnit(SIMTIME_US);
 
     bool isHighRxtLost = dynamic_cast<TcpPacedConnection*>(conn)->checkIsLost(state->snd_una+state->snd_mss);
     bool rackLoss = dynamic_cast<TcpPacedConnection*>(conn)->checkRackLoss();
@@ -467,7 +474,7 @@ void TcpCubic::receivedDuplicateAck()
                 state->lossRecovery = true;
 
                 recalculateSlowStartThreshold();
-                state->snd_cwnd = state->ssthresh; // 20051129 (1)
+                state->snd_cwnd = state->ssthresh + (3*state->snd_mss); // 20051129 (1)
                 EV_DETAIL << " recoveryPoint=" << state->recoveryPoint;
 
                 dynamic_cast<TcpPacedConnection*>(conn)->doRetransmit();
@@ -540,7 +547,15 @@ void TcpCubic::receivedDuplicateAck()
     }
 
     if(state->snd_cwnd > 0){
-       double pace = state->srtt.dbl()/((double) (state->snd_cwnd*1.2)/(double)state->snd_mss);
+        double paceFactor;
+        if (state->snd_cwnd < state->ssthresh/2) {
+            paceFactor = 2;
+        }
+        else{
+            paceFactor = 1.2;
+        }
+       uint32_t maxWindow = std::max(state->snd_cwnd, dynamic_cast<TcpPacedConnection*>(conn)->getBytesInFlight());
+       double pace = state->srtt.dbl()/((double) (maxWindow*paceFactor)/(double)state->snd_mss);
        dynamic_cast<TcpPacedConnection*>(conn)->changeIntersendingTime(pace);
     }
 
