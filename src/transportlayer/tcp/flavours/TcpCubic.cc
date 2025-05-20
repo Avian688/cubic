@@ -350,7 +350,6 @@ void TcpCubic::processRexmitTimer(TcpEventCode &event) {
 
     state->afterRto = true;
     dynamic_cast<TcpPacedConnection*>(conn)->cancelPaceTimer();
-    dynamic_cast<TcpPacedConnection*>(conn)->doRetransmit();
     sendData(false);
 
     conn->emit(ssthreshSignal, state->ssthresh);
