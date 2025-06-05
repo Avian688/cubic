@@ -387,35 +387,33 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
         conn->emit(recoveryPointSignal, state->recoveryPoint);
     }
 
-    if (!state->lossRecovery) {
-        if (state->snd_cwnd < state->ssthresh) {
-            EV_INFO << "cwnd <= ssthresh: Slow Start: increasing cwnd by one SMSS bytes to ";
+    if (state->snd_cwnd < state->ssthresh) {
+        EV_INFO << "cwnd <= ssthresh: Slow Start: increasing cwnd by one SMSS bytes to ";
 
-            // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
-            // by at most SMSS bytes for each ACK received that acknowledges new data."
+        // perform Slow Start. RFC 2581: "During slow start, a TCP increments cwnd
+        // by at most SMSS bytes for each ACK received that acknowledges new data."
+        state->snd_cwnd += state->snd_mss;
+        conn->emit(cwndSignal, state->snd_cwnd);
+        conn->emit(ssthreshSignal, state->ssthresh);
+
+        EV_INFO << "cwnd=" << state->snd_cwnd << "\n";
+    }
+    else {
+
+        updateCubicCwnd(1);
+
+        if (state->cwnd_cnt >= state->cnt) {
             state->snd_cwnd += state->snd_mss;
-            conn->emit(cwndSignal, state->snd_cwnd);
-            conn->emit(ssthreshSignal, state->ssthresh);
-
-            EV_INFO << "cwnd=" << state->snd_cwnd << "\n";
+            state->cwnd_cnt = 0;
         }
         else {
-
-            updateCubicCwnd(1);
-
-            if (state->cwnd_cnt >= state->cnt) {
-                state->snd_cwnd += state->snd_mss;
-                state->cwnd_cnt = 0;
-            }
-            else {
-                state->cwnd_cnt++;
-            }
-            conn->emit(cwndSignal, state->snd_cwnd);
-            conn->emit(ssthreshSignal, state->ssthresh);
-
-
-            EV_INFO << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to " << state->snd_cwnd << "\n";
+            state->cwnd_cnt++;
         }
+        conn->emit(cwndSignal, state->snd_cwnd);
+        conn->emit(ssthreshSignal, state->ssthresh);
+
+
+        EV_INFO << "cwnd > ssthresh: Congestion Avoidance: increasing cwnd linearly, to " << state->snd_cwnd << "\n";
     }
 
     if(state->snd_cwnd > 0){
