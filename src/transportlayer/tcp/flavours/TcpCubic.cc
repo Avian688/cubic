@@ -466,8 +466,15 @@ void TcpCubic::receivedDuplicateAck()
             // RecoveryPoint."
             if (state->recoveryPoint == 0 || seqGE(state->snd_una, state->recoveryPoint)) { // HighACK = snd_una
                 state->recoveryPoint = state->snd_max; // HighData = snd_max
-                dynamic_cast<TcpPacedConnection*>(conn)->setSackedHeadLost();
-                dynamic_cast<TcpPacedConnection*>(conn)->updateInFlight();
+                if (rackLoss) {
+                    // RACK should already have marked lost packets.
+                    dynamic_cast<TcpPacedConnection*>(conn)->updateInFlight();
+                }
+                else {
+                    // dupthresh / highRxt fallback path
+                    dynamic_cast<TcpPacedConnection*>(conn)->setSackedHeadLost();
+                    dynamic_cast<TcpPacedConnection*>(conn)->updateInFlight();
+                }
                 state->lossRecovery = true;
 
                 recalculateSlowStartThreshold();
