@@ -328,6 +328,8 @@ void TcpCubic::recalculateSlowStartThreshold() {
 
 void TcpCubic::processRexmitTimer(TcpEventCode &event) {
     TcpPacedFamily::processRexmitTimer(event);
+    if (event == TCP_E_ABORT)
+        return;
 
     std::cerr << "RTO at " << simTime() << std::endl;
     std::cerr << "cwnd=: " << state->snd_cwnd / state->snd_mss << ", in-flight="
@@ -354,6 +356,32 @@ void TcpCubic::processRexmitTimer(TcpEventCode &event) {
 
     conn->emit(ssthreshSignal, state->ssthresh);
     conn->emit(cwndSegSignal, state->snd_cwnd / state->snd_mss);
+}
+
+void TcpCubic::rackLossDetected()
+{
+    auto pacedConn = dynamic_cast<TcpPacedConnection *>(conn);
+    if (!state->sack_enabled)
+        return;
+
+    if (!state->lossRecovery) {
+        state->recoveryPoint = state->snd_max;
+        pacedConn->updateInFlight();
+        state->lossRecovery = true;
+
+        recalculateSlowStartThreshold();
+        state->snd_cwnd = state->ssthresh + (3 * state->snd_mss);
+        conn->emit(recoveryPointSignal, state->recoveryPoint);
+        conn->emit(cwndSignal, state->snd_cwnd);
+        conn->emit(ssthreshSignal, state->ssthresh);
+        conn->emit(cwndSegSignal, state->snd_cwnd / state->snd_mss);
+    }
+    else {
+        pacedConn->updateInFlight();
+    }
+
+    if (pacedConn->doRetransmit())
+        restartRexmitTimer();
 }
 
 void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
@@ -439,8 +467,7 @@ void TcpCubic::receivedDuplicateAck()
     state->delay_min = state->srtt.inUnit(SIMTIME_US);
 
     bool isHighRxtLost = dynamic_cast<TcpPacedConnection*>(conn)->checkIsLost(state->snd_una+state->snd_mss);
-    bool rackLoss = dynamic_cast<TcpPacedConnection*>(conn)->checkRackLoss();
-    if ((rackLoss && !state->lossRecovery) || state->dupacks == state->dupthresh || (isHighRxtLost && !state->lossRecovery)) {
+    if (state->dupacks == state->dupthresh || (isHighRxtLost && !state->lossRecovery)) {
         EV_INFO << "Reno on dupAcks == DUPTHRESH(=" << state->dupthresh << ": perform Fast Retransmit, and enter Fast Recovery:";
 
         if (state->sack_enabled) {
@@ -466,15 +493,9 @@ void TcpCubic::receivedDuplicateAck()
             // RecoveryPoint."
             if (state->recoveryPoint == 0 || seqGE(state->snd_una, state->recoveryPoint)) { // HighACK = snd_una
                 state->recoveryPoint = state->snd_max; // HighData = snd_max
-                if (rackLoss) {
-                    // RACK should already have marked lost packets.
-                    dynamic_cast<TcpPacedConnection*>(conn)->updateInFlight();
-                }
-                else {
-                    // dupthresh / highRxt fallback path
-                    dynamic_cast<TcpPacedConnection*>(conn)->setSackedHeadLost();
-                    dynamic_cast<TcpPacedConnection*>(conn)->updateInFlight();
-                }
+                // dupthresh / highRxt fallback path
+                dynamic_cast<TcpPacedConnection*>(conn)->setSackedHeadLost();
+                dynamic_cast<TcpPacedConnection*>(conn)->updateInFlight();
                 state->lossRecovery = true;
 
                 recalculateSlowStartThreshold();
