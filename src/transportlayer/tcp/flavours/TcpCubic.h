@@ -57,6 +57,7 @@ protected:
     }
 
     virtual void reset();
+    virtual void setRecoveryCongestionWindow() override;
     uint32_t calculateCubicRoot(uint64_t number) ;
     virtual void updateCubicCwnd(uint32_t acked);
     virtual int32_t fls64(uint64_t x);
