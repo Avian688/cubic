@@ -330,10 +330,7 @@ void TcpCubic::recalculateSlowStartThreshold() {
 
 void TcpCubic::setRecoveryCongestionWindow()
 {
-    auto pacedConn = dynamic_cast<TcpPacedConnection *>(conn);
-    uint64_t recoveryCwnd = static_cast<uint64_t>(pacedConn->getBytesInFlight()) + state->snd_mss;
-    state->snd_cwnd = static_cast<uint32_t>(
-            std::min(recoveryCwnd, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())));
+    state->snd_cwnd = state->ssthresh;
 }
 
 void TcpCubic::processRexmitTimer(TcpEventCode &event) {
