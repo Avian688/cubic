@@ -330,7 +330,7 @@ void TcpCubic::recalculateSlowStartThreshold() {
 
 void TcpCubic::setRecoveryCongestionWindow()
 {
-    state->snd_cwnd = state->ssthresh;
+    TcpPacedFamily::setRecoveryCongestionWindow();
 }
 
 void TcpCubic::processRexmitTimer(TcpEventCode &event) {
@@ -376,6 +376,7 @@ void TcpCubic::rackLossDetected()
         state->recoveryPoint = state->snd_max;
         pacedConn->updateInFlight();
         state->lossRecovery = true;
+        beginPrrRecovery();
 
         recalculateSlowStartThreshold();
         setRecoveryCongestionWindow();
@@ -388,8 +389,8 @@ void TcpCubic::rackLossDetected()
         pacedConn->updateInFlight();
     }
 
-    if (pacedConn->doRetransmit())
-        restartRexmitTimer();
+    if (pacedConn->isRackTimerLossDetection())
+        pacedConn->sendPendingData();
 }
 
 void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
@@ -415,6 +416,15 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
             EV_INFO << "Loss Recovery terminated.\n";
             state->snd_cwnd = state->ssthresh;
             state->lossRecovery = false;
+            resetPrrRecovery();
+        }
+        else {
+            auto *pacedConnection = check_and_cast<TcpPacedConnection *>(conn);
+            const auto rateSample = pacedConnection->getRateSample();
+            const uint32_t cumulativelyAcked = state->snd_una - firstSeqAcked;
+            const uint32_t newlyDelivered = std::max(
+                    rateSample.m_ackedSacked, cumulativelyAcked);
+            updatePrrCongestionWindow(newlyDelivered, true, rateSample.m_bytesLoss);
         }
         conn->emit(sndUnaSignal, state->snd_una);
         conn->emit(recoveryPointSignal, state->recoveryPoint);
@@ -430,9 +440,8 @@ void TcpCubic::receivedDataAck(uint32_t firstSeqAcked) {
                     state->srtt.dbl() / (((double)maxWindow / state->snd_mss) * paceFactor));
         }
 
-        // TcpPacedConnection::processAckInEstabEtc() calls sendPendingData()
-        // after this callback. Keeping cwnd fixed here provides packet
-        // conservation without applying normal CUBIC growth during recovery.
+        // TcpPacedConnection::processAckInEstabEtc() sends after this callback,
+        // using the cwnd exposed by PRR instead of normal CUBIC growth.
         return;
     }
 
@@ -518,12 +527,11 @@ void TcpCubic::receivedDuplicateAck()
                 pacedConn->setSackedHeadLostIfRackDisabled();
                 pacedConn->updateInFlight();
                 state->lossRecovery = true;
+                beginPrrRecovery();
 
                 recalculateSlowStartThreshold();
                 setRecoveryCongestionWindow();
                 EV_DETAIL << " recoveryPoint=" << state->recoveryPoint;
-
-                pacedConn->doRetransmit();
             }
         }
         // RFC 2581, page 5:
@@ -566,8 +574,13 @@ void TcpCubic::receivedDuplicateAck()
         // try to transmit new segments (RFC 2581)
     }
     else if (state->lossRecovery && state->dupacks > state->dupthresh)
-        EV_DETAIL << "Additional duplicate ACK during RACK recovery; cwnd remains "
-                  << state->snd_cwnd << "\n";
+        EV_DETAIL << "Additional duplicate ACK during RACK recovery; applying PRR credit\n";
+
+    if (state->lossRecovery) {
+        const auto rateSample = pacedConn->getRateSample();
+        updatePrrCongestionWindow(rateSample.m_ackedSacked, false,
+                rateSample.m_bytesLoss);
+    }
 
     if(state->snd_cwnd > 0){
         double paceFactor;

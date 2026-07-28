@@ -57,6 +57,7 @@ protected:
     }
 
     virtual void reset();
+    virtual bool usesPrrRecovery() const override { return true; }
     virtual void setRecoveryCongestionWindow() override;
     uint32_t calculateCubicRoot(uint64_t number) ;
     virtual void updateCubicCwnd(uint32_t acked);
